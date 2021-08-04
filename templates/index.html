@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>YTParser</title>
+    <link rel="stylesheet" type="text/css" href="./static/index.css">
+</head>
+<body>
+    <div class="window">
+        {% if args["method"] == "POST" %}
+            {% if args["file_type"] == "xlsx" %}
+                <h1>Файл успешно загружен.</h1>
+                <h1>Ссылок: {{ args["rows"] }}</h1>
+            {% else %}
+                <h1>Нужен файл с расширением .xlsx</h1>
+            {% endif %}
+        {% endif %}
+        <div class="form">
+            <form action="/" method="POST" enctype="multipart/form-data">
+                <input type="file" name="file">
+                <button type="submit">Загрузить</button>
+            </form>
+        </div>
+    </div>
+</body>
+</html>
