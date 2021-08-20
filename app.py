@@ -1,3 +1,5 @@
+import json
+
 from flask import Flask, render_template, request
 from datetime import datetime
 from selenium import webdriver
@@ -11,9 +13,15 @@ from selenium.webdriver.support import expected_conditions as EC
 # from xvfbwrapper import Xvfb
 import openpyxl
 import time
+import logging
 
+
+logging.basicConfig(filename="log.log",
+                    level=logging.INFO,
+                    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 
 app = Flask(__name__)
+LOGGER = logging.getLogger("logger")
 
 
 @app.route("/", methods=["POST", "GET"])
@@ -52,10 +60,12 @@ def parsing(rows):
 
     for row in rows:
         url = row[0].value
-        if url:
-            if "/videos" not in url:
-                url = url + '/videos'
-        # url = 'https://www.youtube.com/c/Enjoykin/videos'
+        if not url:
+            continue
+
+        if "/videos" not in url:
+            url = '{}/videos'.format(url)
+
         name_of_bloger = url.split('/')[-2]
         driver.get(url)
         body = driver.find_element_by_tag_name('body')
@@ -73,103 +83,127 @@ def parsing(rows):
         for link in links:
             try:
                 href = link.get_attribute('href')
-            except Exception:
-                href = 0
-
-            if href:
-                videos.append(href)
-        rows = [['Link', '#Tags', 'Name', 'Views', 'Date of publication', 'Likes', 'Dislikes', 'Date of parsing',
-                 'Description', 'First comment', 'Answers for first comment', 'All comments']]
-        for video in videos:
-            # video = 'https://www.youtube.com/watch?v=PDtlnRmdI24'
-            row = [video, ]
-            driver.get(video)
-
-            try: tags = WebDriverWait(driver, 3).until(EC.presence_of_element_located((By.CLASS_NAME,
-                                                 "super-title.style-scope.ytd-video-primary-info-renderer"))).text
-            except: tags = '-'
-            first_text = WebDriverWait(driver, 3).until(EC.presence_of_element_located((By.CLASS_NAME,
-                                                 "style-scope.ytd-video-primary-info-renderer"))).text.split('\n')
-
-            if 'просмотр' not in first_text[1]:
-                first_text = first_text[1:]
-            name_of_vid = first_text[0]
-            description = WebDriverWait(driver, 3).until(EC.presence_of_element_located((By.CLASS_NAME,
-                                                        "content.style-scope.ytd-video-secondary-info-renderer")))
-            if 'просмотров' in first_text[1]:
-                count_of_watch = first_text[1].split('просмотров')[0]
-                date_of_pub = first_text[1].split('просмотров')[1]
-            elif 'просмотр' in first_text[1]:
-                count_of_watch = first_text[1].split('просмотр')[0]
-                date_of_pub = first_text[1].split('просмотр')[1]
+            except Exception as ex:
+                error_json = json.dumps({
+                    "link": link,
+                })
+                LOGGER.error("{}\n{}\n".format(ex, error_json))
             else:
-                count_of_watch = first_text[1].split('просмотра')[0]
-                date_of_pub = first_text[1].split('просмотра')[1]
-            likes = first_text[2]
-            dislikes = first_text[3]
+                videos.append(href)
 
-            row.append(tags)
-            row.append(name_of_vid)
-            row.append(count_of_watch)
-            row.append(date_of_pub)
-            row.append(likes)
-            row.append(dislikes)
-            row.append(date_of_pars)
-            row.append(description.text)
+        rows = [
+            ['Link', '#Tags', 'Name', 'Views', 'Date of publication', 'Likes', 'Dislikes', 'Date of parsing',
+             'Description', 'First comment', 'Answers for first comment', 'All comments']
+        ]
+        element_class_name_suf = "style-scope.ytd-video-primary-info-renderer"
+        for video in videos:
+            row = [video, ]
+            try:
+                driver.get(video)
+                try:
+                    tags = WebDriverWait(driver, 3).until(
+                        EC.presence_of_element_located((By.CLASS_NAME, "super-title.{}".format(element_class_name_suf)))
+                    ).text
+                except Exception as ex:
+                    error_json = json.dumps({
+                        "video URL": video,
+                    })
+                    LOGGER.error("{}\n{}\n".format(ex, error_json))
 
-            body = driver.find_element_by_tag_name('body')
+                    tags = '-'
 
-            body.send_keys(Keys.END)
-            time.sleep(1)
-            driver.execute_script("window.scrollTo(0,document.body.scrollHeight);")
+                first_text = WebDriverWait(driver, 3).until(
+                    EC.presence_of_element_located((By.CLASS_NAME, "{}".format(element_class_name_suf)))
+                ).text.split('\n')
 
-            count = 0
-            change = 0
-            while not change:
+                if 'просмотр' not in first_text[1]:
+                    first_text = first_text[1:]
+
+                name_of_vid = first_text[0]
+                element_class_name = "content.style-scope.ytd-video-secondary-info-renderer"
+                description = WebDriverWait(driver, 3).until(
+                    EC.presence_of_element_located((By.CLASS_NAME, element_class_name)))
+
+                if 'просмотров' in first_text[1]:
+                    count_of_watch = first_text[1].split('просмотров')[0]
+                    date_of_pub = first_text[1].split('просмотров')[1]
+                elif 'просмотр' in first_text[1]:
+                    count_of_watch = first_text[1].split('просмотр')[0]
+                    date_of_pub = first_text[1].split('просмотр')[1]
+                else:
+                    count_of_watch = first_text[1].split('просмотра')[0]
+                    date_of_pub = first_text[1].split('просмотра')[1]
+                likes = first_text[2]
+                dislikes = first_text[3]
+
+                row.extend([tags, name_of_vid, count_of_watch,
+                            date_of_pub, likes, dislikes,
+                            date_of_pars, description.text])
+
+                body = driver.find_element_by_tag_name('body')
+
                 body.send_keys(Keys.END)
                 time.sleep(1)
-                len_com = len(body.find_elements_by_tag_name('ytd-comment-thread-renderer'))
-                if count == len_com:
-                    change += 1
-                count += len_com - count
+                driver.execute_script("window.scrollTo(0,document.body.scrollHeight);")
 
-            first_comment = ''
-            answers = ''
-            all_comments = ''
-            comments = body.find_elements_by_tag_name('ytd-comment-thread-renderer')
-            if comments:
-                if 'Закреплено пользователем' in comments[0].text:
-                    first_comment += comments[0].text.split('ОТВЕТИТЬ')[0]
-                    more = comments[0].find_elements_by_id('replies')
-                    if more:
-                        try:
-                            button = WebDriverWait(more[0], 2).until(EC.presence_of_element_located((By.ID, "more-replies")))
-                            driver.execute_script("arguments[0].click();", button)
-                            replies_block = comments[0].find_element_by_id('replies')
-                            # replies = replies_block.find_elements_by_id()
-                            answers += '\n\n' + replies_block.text
-                        except:
-                            pass
+                count = 0
+                change = 0
+                while not change:
+                    body.send_keys(Keys.END)
+                    time.sleep(1)
+                    len_com = len(body.find_elements_by_tag_name('ytd-comment-thread-renderer'))
+                    if count == len_com:
+                        change += 1
+                    count += len_com - count
 
-                if first_comment:
-                    comments = comments[1:]
-                for comment in comments:
-                    all_comments += comment.text.split('ОТВЕТИТЬ')[0]
-                    more = comment.find_elements_by_id('replies')
-                    if more:
-                        try:
-                            button = WebDriverWait(more[0], 2).until(EC.presence_of_element_located((By.ID, "more-replies")))
-                            driver.execute_script("arguments[0].click();", button)
-                            replies_block = comment.find_element_by_id('replies')
-                            all_comments += '\n\n' + replies_block.text
-                        except:
-                            pass
-                    all_comments += '\n---------\n'
-            row.append(first_comment)
-            row.append(answers)
-            row.append(all_comments)
+                first_comment = ''
+                answers = ''
+                all_comments = ''
+                comments = body.find_elements_by_tag_name('ytd-comment-thread-renderer')
+                if comments:
+                    if 'Закреплено пользователем' in comments[0].text:
+                        first_comment += comments[0].text.split('ОТВЕТИТЬ')[0]
+                        more = comments[0].find_elements_by_id('replies')
+                        if more:
+                            try:
+                                button = WebDriverWait(more[0], 2).until(EC.presence_of_element_located((By.ID, "more-replies")))
+                                driver.execute_script("arguments[0].click();", button)
+                                replies_block = comments[0].find_element_by_id('replies')
+                                # replies = replies_block.find_elements_by_id()
+                                answers += '\n\n' + replies_block.text
+                            except Exception as ex:
+                                error_json = json.dumps({
+                                    "video URL": video,
+                                })
+                                LOGGER.error("{}\n{}\n".format(ex, error_json))
 
-            rows.append(row)
+                    if first_comment:
+                        comments = comments[1:]
+                    for comment in comments:
+                        all_comments += comment.text.split('ОТВЕТИТЬ')[0]
+                        more = comment.find_elements_by_id('replies')
+                        if more:
+                            try:
+                                button = WebDriverWait(more[0], 2).until(
+                                    EC.presence_of_element_located((By.ID, "more-replies"))
+                                )
+                                driver.execute_script("arguments[0].click();", button)
+                                replies_block = comment.find_element_by_id('replies')
+                                all_comments += '\n\n' + replies_block.text
+                            except:
+                                pass
+                        all_comments += '\n---------\n'
+                row.append(first_comment)
+                row.append(answers)
+                row.append(all_comments)
+
+                rows.append(row)
+            except Exception as ex:
+                error_json = json.dumps({
+                    "video URL": video,
+                })
+                LOGGER.error("{}\n{}\n".format(ex, error_json))
+
         wb = openpyxl.Workbook()
         # wb = openpyxl.load_workbook(name_of_bloger + '.xlsx')
         ws = wb.active
@@ -177,6 +211,7 @@ def parsing(rows):
             ws.append(row)
 
         wb.save(name_of_bloger + '.xlsx')
+
 
 if __name__ == '__main__':
     app.run()
