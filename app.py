@@ -17,7 +17,7 @@ import logging
 
 
 logging.basicConfig(filename="log.log",
-                    level=logging.INFO,
+                    level=logging.ERROR,
                     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 
 app = Flask(__name__)
@@ -86,8 +86,9 @@ def parsing(rows):
             except Exception as ex:
                 error_json = json.dumps({
                     "link": link,
+                    "err": ex.args
                 })
-                LOGGER.error("{}\n{}\n".format(ex, error_json))
+                LOGGER.error("{}".format(error_json))
             else:
                 videos.append(href)
 
@@ -107,8 +108,9 @@ def parsing(rows):
                 except Exception as ex:
                     error_json = json.dumps({
                         "video URL": video,
+                        "err": ex.args
                     })
-                    LOGGER.error("{}\n{}\n".format(ex, error_json))
+                    LOGGER.error("{}".format(error_json))
 
                     tags = '-'
 
@@ -174,8 +176,9 @@ def parsing(rows):
                             except Exception as ex:
                                 error_json = json.dumps({
                                     "video URL": video,
+                                    "err": ex.args
                                 })
-                                LOGGER.error("{}\n{}\n".format(ex, error_json))
+                                LOGGER.error("{}".format(error_json))
 
                     if first_comment:
                         comments = comments[1:]
@@ -190,8 +193,13 @@ def parsing(rows):
                                 driver.execute_script("arguments[0].click();", button)
                                 replies_block = comment.find_element_by_id('replies')
                                 all_comments += '\n\n' + replies_block.text
-                            except:
-                                pass
+                            except Exception as ex:
+                                error_json = json.dumps({
+                                    "video URL": video,
+                                    "err": ex.args
+                                })
+                                LOGGER.error("{}".format(error_json))
+
                         all_comments += '\n---------\n'
                 row.append(first_comment)
                 row.append(answers)
@@ -201,14 +209,15 @@ def parsing(rows):
             except Exception as ex:
                 error_json = json.dumps({
                     "video URL": video,
+                    "err": ex.args
                 })
-                LOGGER.error("{}\n{}\n".format(ex, error_json))
+                LOGGER.error("{}".format(error_json))
 
         wb = openpyxl.Workbook()
         # wb = openpyxl.load_workbook(name_of_bloger + '.xlsx')
         ws = wb.active
-        for row in rows:
-            ws.append(row)
+        for _ in rows:
+            ws.append(_)
 
         wb.save(name_of_bloger + '.xlsx')
 
